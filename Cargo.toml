@@ -8,7 +8,7 @@ description = "Command line tool for discovering local git repositories and keep
 readme = "README.md"
 license = "Apache-2.0"
 keywords = [ "git", "command-line", "batch-processing" ]
-categories = [ "Command line utilities" ]
+categories = [ "command-line-utilities" ]
 documentation = "https://docs.rs/reposcan"
 
 [dependencies]
