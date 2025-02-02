@@ -1,0 +1,17 @@
+[package]
+name = "reposcan"
+version = "0.1.0"
+edition = "2021"
+authors = [ "chrfre@pm.me" ]
+repository = "https://github.com/chrfre/reposcan.git"
+description = "Command line tool for discovering local git repositories and keeping track of local and remote changes collectively."
+readme = "README.md"
+license = "Apache-2.0"
+keywords = [ "git", "command-line", "batch-processing" ]
+categories = [ "Command line utilities" ]
+documentation = "https://docs.rs/reposcan"
+
+[dependencies]
+clap = { version = "4", features = [ "derive" ] }
+git2 = "0"
+home = "0"
