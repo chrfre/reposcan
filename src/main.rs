@@ -15,6 +15,9 @@ use git2::RepositoryState;
 #[ derive( Parser ) ]
 #[ command( author, version, about, long_about = None ) ]
 struct Cli {
+    /// Print where the program is currently scanning.
+    #[ arg( short, long ) ]
+    verbose: bool,
     #[ command( subcommand ) ]
     mode: Commands,
 }
@@ -42,9 +45,15 @@ enum Commands {
     },
 }
 
-fn discover( working_directory: &Path ) -> Result<Vec<PathBuf>,std::io::Error> {
+fn discover( working_directory: &Path, verbose: bool ) -> Result<Vec<PathBuf>,std::io::Error> {
 
-    let mut repositories = Vec::new();
+    if verbose {
+        println!( "scanning {working_directory:?} ..." );
+    }
+
+    let mut entries: Vec<(PathBuf,String)> = Vec::new();
+
+    let mut ignore_patterns: Option<BTreeSet<String>> = None;
 
     for entry in fs::read_dir( &working_directory )? {
 
@@ -59,19 +68,54 @@ fn discover( working_directory: &Path ) -> Result<Vec<PathBuf>,std::io::Error> {
             continue;
         };
 
-        if entry_path.is_dir() && entry.eq( ".git" ) {
-            repositories.push(
-                entry_path.parent()
-                    // `unwrap` justified because the parent must be the
-                    // `working_directory`
-                    .unwrap()
-                    .to_owned() )
-        } else if entry_path.is_dir() {
+        if entry_path.is_dir() {
+
+            if entry.eq( ".git" ) {
+                return Ok( vec![ working_directory.to_owned() ] );
+            } else {
+                entries.push( ( entry_path.clone(), entry.to_owned() ) );
+            }
+        }
+
+        if entry_path.is_file() && entry.eq( ".reposcanignore" ) {
+            ignore_patterns = Some(
+                fs::read_to_string( entry_path )?.lines()
+                    .map(
+                        | line |
+                        line.to_owned()
+                    ).collect()
+            )
+        }
+    }
+
+    // Potentially filter entries.
+    let entries: Vec<_> = match ignore_patterns {
+        Some( ignore_patterns ) =>
+            entries.into_iter()
+                .filter_map(
+                    | ( entry_path, entry ) |
+                    if !ignore_patterns.contains( &entry ) {
+                        Some( entry_path.clone() )
+                    } else {
+                        None
+                    }
+                ).collect(),
+        None =>
+            entries.into_iter()
+                .map(
+                    | ( entry_path, _ ) |
+                    entry_path
+                ).collect(),
+    };
+
+    let mut repositories = Vec::new();
+
+    for entry_path in entries {
+
+        if entry_path.is_dir() {
             repositories.append(
-                &mut discover( &entry_path )?
+                &mut discover( &entry_path, verbose )?
             );
-        } else if entry_path.is_file() && entry.eq( ".reposcanignore" ) {
-            return Ok( Vec::new() )
         }
     }
 
@@ -111,7 +155,7 @@ fn main() -> Result<(),Box<dyn Error>> {
         panic!( "Failed to obtain the user's home directory!" )
     };
 
-    let repositories_file = home_directory.join( ".reposcan" );
+    let repositories_file = home_directory.join( ".reposcanconfig" );
 
     let mut all_known_repositories = load_known_repositories( &repositories_file )?;
 
@@ -136,7 +180,7 @@ fn main() -> Result<(),Box<dyn Error>> {
         } => {
             
             let discovered_repositories: Vec<String> =
-                discover( &working_directory )?.into_iter().map(
+                discover( &working_directory, cli.verbose )?.into_iter().map(
                     | repository | {
                         repository.to_str().unwrap().to_owned()
                     }
@@ -196,7 +240,9 @@ fn main() -> Result<(),Box<dyn Error>> {
             }
         },
         Commands::Fetch => {
-            for repository_path in &repositories_in_working_directory {
+
+            for repository_path in &all_known_repositories {
+
                 let repository = Repository::open( repository_path )?;
                 println!(
                     "fetching \"{}\"",
@@ -221,12 +267,25 @@ fn main() -> Result<(),Box<dyn Error>> {
                 
                 for remote in &remotes {
                     let mut remote = repository.find_remote( remote )?;
-                    remote.fetch( &branches, None, None )?;
+
+                    let fetch_result =
+                        remote.fetch( &branches, None, None );
+                    if let Err( error ) = fetch_result {
+                        println!(
+                            "Failed to fetch branches {branches:?} from remote {}! {error}",
+                            remote.name().unwrap()
+                        );
+                    }
                 }
             }
         },
         Commands::Status => {
-            for repository_path in &repositories_in_working_directory {
+            for repository_path in &all_known_repositories {
+                
+                if cli.verbose {
+                    println!( "Obtaining status of repository: {repository_path} ..." );
+                }
+
                 let repository = Repository::open( repository_path )?;
                 let state_clean = match repository.state() {
                     RepositoryState::Clean => true,
@@ -238,15 +297,14 @@ fn main() -> Result<(),Box<dyn Error>> {
                         !status.status().is_ignored()
                     )
                     .count();
-                println!(
-                    "[{}] {}",
-                    if state_clean && status_clean == 0 {
-                        "clean".to_owned()
-                    } else {
-                        format!( "unclean, {} file(s)", status_clean )
-                    },
-                    repository_path,
-                );
+
+                if !state_clean || status_clean != 0 {
+                    println!(
+                        "{} file(s) unclean @ {}",
+                        status_clean,
+                        repository_path,
+                    );
+                }
             }
         },
         Commands::List { global } => {
@@ -273,24 +331,23 @@ fn main() -> Result<(),Box<dyn Error>> {
         }
     }
 
-    // Don't show number of ignored repositories if the `--global` switch was
+    // Show number of ignored repositories if the `--global` switch was not
     // used.
-    if let Commands::List { global: true } = &cli.mode {
-        return Ok( () );
-    }
+    if let Commands::List { global: false } = &cli.mode {
 
-    // Don't show number of ignored repositories if none were ignored.
-    if ignored_repositories_count == 0 {
-        return Ok( () );
-    }
+        // Don't show number of ignored repositories if none were ignored.
+        if ignored_repositories_count == 0 {
+            return Ok( () );
+        }
 
-    println!();
-    println!(
-        "(Ignored {ignored_repositories_count} repositor{} which {} outside of the current working directory.)",
-        if ignored_repositories_count == 1 { "y" } else { "ies" },
-        if ignored_repositories_count == 1 { "is" } else { "are" },
-    );
-    println!();
+        println!();
+        println!(
+            "(Ignored {ignored_repositories_count} repositor{} which {} outside of the current working directory.)",
+            if ignored_repositories_count == 1 { "y" } else { "ies" },
+            if ignored_repositories_count == 1 { "is" } else { "are" },
+        );
+        println!();
+    }
 
     Ok( () )
 }
