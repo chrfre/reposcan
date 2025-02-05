@@ -73,4 +73,4 @@ will output all known repositories.
 
 ----
 
-This project is not affiliated with the Git™ project nor with thee Software Freedom Conservancy.
+This project is not affiliated with the Git™ project nor with the Software Freedom Conservancy.
