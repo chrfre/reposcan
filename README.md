@@ -8,9 +8,9 @@ Perhaps you find yourself using many git repositories to collaborate and keep tr
 Then a tool such as this might be helpful by
 - **discover**ing repositories on your device by scanning directory trees,
 - curating a list of repositories for fast interactions,
-- checking the collective **status** at a glance, i.e. seeing which repositories contain uncommitted changes, and
-- **fetch**ing commits to all repositories from all remotes with a single command.
-- **list**ing all known 
+- checking the collective **status** at a glance, i.e. seeing which repositories contain uncommitted changes,
+- **fetch**ing commits to all repositories from all remotes with a single command,
+- **list**ing all known repositories.
 
 ## Usage
 
