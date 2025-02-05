@@ -9,7 +9,6 @@ readme = "README.md"
 license = "Apache-2.0"
 keywords = [ "git", "command-line", "batch-processing" ]
 categories = [ "command-line-utilities" ]
-documentation = "https://docs.rs/reposcan"
 
 [dependencies]
 clap = { version = "4", features = [ "derive" ] }
