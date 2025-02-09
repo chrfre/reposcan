@@ -67,8 +67,9 @@ reposcan fetch
 ```
 all known repositories are entered and updated from all remotes.
 
-Currently authentication is not yet implemented, but the plan is to seamlessly obtain authentication in the future.
+Currently if an unauthenticated fetch fails (most likely due to required authentication), the fetching is repeated via a `git` subprocess.
 If one has set up `git` to properly authenticate to a server, then authentication will also work with `reposcan` without the need to set it up seperately.
+This solution is privacy-preserving insomuch that a user does not have to trust `reposcan` to handle their credentials.
 
 ### Listing
 

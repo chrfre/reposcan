@@ -2,8 +2,7 @@ use std::collections::BTreeSet;
 use std::env;
 use std::error::Error;
 use std::fs;
-use std::path::Path;
-use std::path::PathBuf;
+use std::process::Command;
 
 use clap::Parser;
 use clap::Subcommand;
@@ -11,6 +10,11 @@ use clap::Subcommand;
 use git2::BranchType;
 use git2::Repository;
 use git2::RepositoryState;
+
+use repositories::discover;
+use repositories::load_known_repositories;
+
+mod repositories;
 
 #[ derive( Parser ) ]
 #[ command( author, version, about, long_about = None ) ]
@@ -43,99 +47,6 @@ enum Commands {
         #[ arg( short, long ) ]
         global: bool
     },
-}
-
-fn discover( working_directory: &Path, verbose: bool ) -> Result<Vec<PathBuf>,std::io::Error> {
-
-    if verbose {
-        println!( "scanning {working_directory:?} ..." );
-    }
-
-    let mut entries: Vec<(PathBuf,String)> = Vec::new();
-
-    let mut ignore_patterns: Option<BTreeSet<String>> = None;
-
-    for entry in fs::read_dir( &working_directory )? {
-
-        let entry = entry?;
-
-        let entry_path = entry.path();
-
-        let Some( entry ) = entry_path.file_name() else {
-            continue;
-        };
-        let Some( entry ) = entry.to_str() else {
-            continue;
-        };
-
-        if entry_path.is_dir() {
-
-            if entry.eq( ".git" ) {
-                return Ok( vec![ working_directory.to_owned() ] );
-            } else {
-                entries.push( ( entry_path.clone(), entry.to_owned() ) );
-            }
-        }
-
-        if entry_path.is_file() && entry.eq( ".reposcanignore" ) {
-            ignore_patterns = Some(
-                fs::read_to_string( entry_path )?.lines()
-                    .map(
-                        | line |
-                        line.to_owned()
-                    ).collect()
-            )
-        }
-    }
-
-    // Potentially filter entries.
-    let entries: Vec<_> = match ignore_patterns {
-        Some( ignore_patterns ) =>
-            entries.into_iter()
-                .filter_map(
-                    | ( entry_path, entry ) |
-                    if !ignore_patterns.contains( &entry ) {
-                        Some( entry_path.clone() )
-                    } else {
-                        None
-                    }
-                ).collect(),
-        None =>
-            entries.into_iter()
-                .map(
-                    | ( entry_path, _ ) |
-                    entry_path
-                ).collect(),
-    };
-
-    let mut repositories = Vec::new();
-
-    for entry_path in entries {
-
-        if entry_path.is_dir() {
-            repositories.append(
-                &mut discover( &entry_path, verbose )?
-            );
-        }
-    }
-
-    Ok( repositories )
-}
-
-fn load_known_repositories( repositories_file: &Path ) -> Result<BTreeSet<String>,std::io::Error> {
-
-    let mut repositories: BTreeSet<String> = BTreeSet::new();
-
-    let repositories_file_exists = fs::exists( repositories_file )?;
-
-    if repositories_file_exists {
-        let repositories_content = fs::read_to_string( repositories_file )?;
-        for repository in repositories_content.lines() {
-            repositories.insert( repository.to_owned() );
-        }
-    }
-
-    Ok( repositories )
 }
 
 fn main() -> Result<(),Box<dyn Error>> {
@@ -245,7 +156,7 @@ fn main() -> Result<(),Box<dyn Error>> {
 
                 let repository = Repository::open( repository_path )?;
                 println!(
-                    "fetching \"{}\"",
+                    "Fetching \"{}\" ... ",
                     repository_path
                 );
                 let branches: Vec<String> =
@@ -265,18 +176,38 @@ fn main() -> Result<(),Box<dyn Error>> {
                         }
                     ).collect();
                 
-                for remote in &remotes {
-                    let mut remote = repository.find_remote( remote )?;
+                for remote_str in &remotes {
+                    if remotes.len() > 1 {
+                        println!( "(from remote {remote_str})" );
+                    }
+                    let mut remote = repository.find_remote( remote_str )?;
 
                     let fetch_result =
                         remote.fetch( &branches, None, None );
-                    if let Err( error ) = fetch_result {
-                        println!(
-                            "Failed to fetch branches {branches:?} from remote {}! {error}",
-                            remote.name().unwrap()
-                        );
+                    if let Err( _ ) = fetch_result {
+                        println!( "(Trying authented fetch via a git subprocess ...) ");
+                        let output_result =
+                            Command::new( "git" )
+                                .args( [ "fetch", remote_str ] )
+                                .current_dir( repository_path )
+                                .output();
+                        let Ok( output ) = output_result else {
+                            println!( "Failed to call on git!" );
+                            continue;
+                        };
+                        if !output.status.success() {
+                            println!( "Failed!" );
+                            println!( "{:?}", output );
+                        } else {
+                            println!(
+                                "Succeeded."
+                            );
+                        }
+                    } else {
+                        println!( "Succeeded.");
                     }
                 }
+                println!();
             }
         },
         Commands::Status => {
