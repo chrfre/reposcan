@@ -12,6 +12,13 @@ Then a tool such as this might be helpful by
 - **fetch**ing commits to all repositories from all remotes with a single command,
 - **list**ing all known repositories.
 
+## Installation
+
+There are currently no precompiled binaries available.
+`reposcan` can be compiled from source via rust's `cargo` package manager from [`crates.io`](https://crates.io/crates/reposcan).
+Instructions there can be found under the "Install".
+If rust is not yet installed, visit [rustup.rs](https://rustup.rs/) for instructions.
+
 ## Usage
 
 A quick and crisp entry into using `reposcan` can be found by typing
